@@ -1,0 +1,27 @@
+# R specific
+.Rhistory
+.Rdata
+.RData
+.Ruserdata
+*.Rproj
+
+# Output files
+outputs/
+plots/
+*.png
+*.pdf
+*.log
+
+# Hadoop/Hive temporary files
+*.jar
+metastore_db/
+derby.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files (optional - uncomment if datasets are large)
+# data/*.csv
