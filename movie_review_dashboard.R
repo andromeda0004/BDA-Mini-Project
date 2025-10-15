@@ -35,10 +35,26 @@ ui <- fluidPage(
                   choices = c("All Genres", unique(movie_data$genre)),
                   selected = "All Genres"),
       
+      # Dropdown for selecting director
+      selectInput("director", "Select Director:", 
+                  choices = c("All Directors", sort(unique(movie_data$director))),
+                  selected = "All Directors"),
+      
       # Dropdown for selecting platform
       selectInput("platform", "Select Platform:", 
                   choices = c("All Platforms", unique(movie_data$platform)),
                   selected = "All Platforms"),
+      
+      # IMPROVED: Use selectizeInput with server-side processing for reviewer
+      selectizeInput("reviewer", 
+                     "Select Reviewer (type to search):", 
+                     choices = NULL,  # Will be populated server-side
+                     selected = NULL,
+                     options = list(
+                       placeholder = 'Type to search reviewers...',
+                       maxOptions = 10,
+                       create = FALSE
+                     )),
       
       # Dropdown for selecting sentiment
       selectInput("sentiment", "Select Sentiment:", 
@@ -77,6 +93,12 @@ ui <- fluidPage(
                  plotlyOutput("genre_reviews")
         ),
         
+        tabPanel("🎬 Director Analysis", 
+                 plotlyOutput("director_ratings"),
+                 br(),
+                 plotlyOutput("director_sentiment")
+        ),
+        
         tabPanel("📅 Timeline", 
                  plotlyOutput("reviews_timeline"),
                  br(),
@@ -93,7 +115,9 @@ ui <- fluidPage(
         tabPanel("👥 Reviewer Insights", 
                  plotlyOutput("platform_distribution"),
                  br(),
-                 plotlyOutput("verified_vs_unverified")
+                 plotlyOutput("verified_vs_unverified"),
+                 br(),
+                 plotlyOutput("top_reviewers")
         ),
         
         tabPanel("💬 Review Scores", 
@@ -107,7 +131,13 @@ ui <- fluidPage(
 )
 
 # Step 4: Define the Server Logic for the Shiny Dashboard
-server <- function(input, output) {
+server <- function(input, output, session) {
+  
+  # Server-side selectize for reviewer names
+  updateSelectizeInput(session, "reviewer",
+                       choices = c("All Reviewers", sort(unique(movie_data$reviewer_name))),
+                       selected = "All Reviewers",
+                       server = TRUE)
   
   # Filter data based on user selections
   filtered_data <- reactive({
@@ -123,8 +153,17 @@ server <- function(input, output) {
       data <- data %>% filter(genre == input$genre)
     }
     
+    if (input$director != "All Directors") {
+      data <- data %>% filter(director == input$director)
+    }
+    
     if (input$platform != "All Platforms") {
       data <- data %>% filter(platform == input$platform)
+    }
+    
+    # Filter by reviewer with NULL check
+    if (!is.null(input$reviewer) && input$reviewer != "All Reviewers" && input$reviewer != "") {
+      data <- data %>% filter(reviewer_name == input$reviewer)
     }
     
     if (input$sentiment != "All") {
@@ -244,6 +283,53 @@ server <- function(input, output) {
     ggplotly(p)
   })
   
+  # Director Ratings Analysis
+  output$director_ratings <- renderPlotly({
+    data <- filtered_data() %>%
+      group_by(director) %>%
+      summarize(avg_rating = mean(rating, na.rm = TRUE),
+                review_count = n()) %>%
+      filter(review_count >= 3) %>%
+      arrange(desc(avg_rating)) %>%
+      head(15)
+    
+    p <- ggplot(data, aes(x = reorder(director, avg_rating), y = avg_rating)) +
+      geom_col(fill = "#3498db") +
+      geom_text(aes(label = round(avg_rating, 1)), hjust = -0.2, size = 3) +
+      coord_flip() +
+      labs(title = "Top Directors by Average Rating (min 3 reviews)",
+           x = "Director", y = "Average Rating") +
+      theme_minimal() +
+      ylim(0, 10)
+    
+    ggplotly(p)
+  })
+  
+  # Director Sentiment Distribution
+  output$director_sentiment <- renderPlotly({
+    data <- filtered_data() %>%
+      group_by(director, sentiment) %>%
+      summarize(count = n(), .groups = "drop") %>%
+      group_by(director) %>%
+      mutate(total = sum(count)) %>%
+      filter(total >= 3) %>%
+      arrange(desc(total)) %>%
+      ungroup() %>%
+      filter(director %in% head(unique(director), 10))
+    
+    p <- ggplot(data, aes(x = reorder(director, -total), y = count, fill = sentiment)) +
+      geom_col(position = "dodge") +
+      scale_fill_manual(values = c("Positive" = "#2ecc71", 
+                                   "Neutral" = "#f39c12", 
+                                   "Negative" = "#e74c3c")) +
+      labs(title = "Top 10 Directors - Sentiment Distribution",
+           x = "Director", y = "Number of Reviews", fill = "Sentiment") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    
+    ggplotly(p)
+  })
+  
   # 8. Reviews Timeline
   output$reviews_timeline <- renderPlotly({
     data <- filtered_data() %>%
@@ -350,6 +436,29 @@ server <- function(input, output) {
                                    "Negative" = "#e74c3c")) +
       labs(title = "Verified vs Unverified Reviews by Sentiment",
            x = "Verified Purchase", y = "Number of Reviews", fill = "Sentiment") +
+      theme_minimal()
+    
+    ggplotly(p)
+  })
+  
+  # Top Reviewers Analysis
+  output$top_reviewers <- renderPlotly({
+    data <- filtered_data() %>%
+      group_by(reviewer_name) %>%
+      summarize(review_count = n(),
+                avg_score = mean(review_score, na.rm = TRUE),
+                avg_helpful_votes = mean(helpful_votes, na.rm = TRUE)) %>%
+      arrange(desc(review_count)) %>%
+      head(15)
+    
+    p <- ggplot(data, aes(x = reorder(reviewer_name, review_count), y = review_count, 
+                         fill = avg_score)) +
+      geom_col() +
+      geom_text(aes(label = review_count), hjust = -0.2, size = 3) +
+      scale_fill_gradient(low = "#e74c3c", high = "#2ecc71") +
+      coord_flip() +
+      labs(title = "Top 15 Most Active Reviewers",
+           x = "Reviewer", y = "Number of Reviews", fill = "Avg Score") +
       theme_minimal()
     
     ggplotly(p)
