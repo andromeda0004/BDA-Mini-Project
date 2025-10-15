@@ -45,10 +45,10 @@ ui <- fluidPage(
                   choices = c("All Platforms", unique(movie_data$platform)),
                   selected = "All Platforms"),
       
-      # IMPROVED: Use selectizeInput with server-side processing for reviewer
+      # Server-side selectize for reviewer with large dataset
       selectizeInput("reviewer", 
                      "Select Reviewer (type to search):", 
-                     choices = NULL,  # Will be populated server-side
+                     choices = NULL,
                      selected = NULL,
                      options = list(
                        placeholder = 'Type to search reviewers...',
@@ -185,7 +185,7 @@ server <- function(input, output, session) {
   output$sentiment_pie <- renderPlotly({
     data <- filtered_data() %>%
       group_by(sentiment) %>%
-      summarize(count = n())
+      summarize(count = n(), .groups = "drop")
     
     colors <- c("Positive" = "#2ecc71", "Neutral" = "#f39c12", "Negative" = "#e74c3c")
     
@@ -200,7 +200,7 @@ server <- function(input, output, session) {
   output$sentiment_bar <- renderPlotly({
     data <- filtered_data() %>%
       group_by(sentiment) %>%
-      summarize(count = n(), avg_score = mean(review_score, na.rm = TRUE))
+      summarize(count = n(), avg_score = mean(review_score, na.rm = TRUE), .groups = "drop")
     
     p <- ggplot(data, aes(x = sentiment, y = count, fill = sentiment)) +
       geom_col() +
@@ -269,7 +269,7 @@ server <- function(input, output, session) {
   output$genre_reviews <- renderPlotly({
     data <- filtered_data() %>%
       group_by(genre) %>%
-      summarize(count = n(), avg_rating = mean(rating, na.rm = TRUE))
+      summarize(count = n(), avg_rating = mean(rating, na.rm = TRUE), .groups = "drop")
     
     p <- ggplot(data, aes(x = reorder(genre, -count), y = count, fill = avg_rating)) +
       geom_col() +
@@ -283,12 +283,12 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # Director Ratings Analysis
+  # 8. Director Ratings Analysis
   output$director_ratings <- renderPlotly({
     data <- filtered_data() %>%
       group_by(director) %>%
       summarize(avg_rating = mean(rating, na.rm = TRUE),
-                review_count = n()) %>%
+                review_count = n(), .groups = "drop") %>%
       filter(review_count >= 3) %>%
       arrange(desc(avg_rating)) %>%
       head(15)
@@ -305,7 +305,7 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # Director Sentiment Distribution
+  # 9. Director Sentiment Distribution
   output$director_sentiment <- renderPlotly({
     data <- filtered_data() %>%
       group_by(director, sentiment) %>%
@@ -315,7 +315,12 @@ server <- function(input, output, session) {
       filter(total >= 3) %>%
       arrange(desc(total)) %>%
       ungroup() %>%
-      filter(director %in% head(unique(director), 10))
+      slice_head(n = 10) %>%
+      arrange(desc(total))
+    
+    if(nrow(data) == 0) {
+      return(plotly_empty())
+    }
     
     p <- ggplot(data, aes(x = reorder(director, -total), y = count, fill = sentiment)) +
       geom_col(position = "dodge") +
@@ -330,11 +335,11 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # 8. Reviews Timeline
+  # 10. Reviews Timeline
   output$reviews_timeline <- renderPlotly({
     data <- filtered_data() %>%
       group_by(review_date) %>%
-      summarize(count = n())
+      summarize(count = n(), .groups = "drop")
     
     p <- ggplot(data, aes(x = review_date, y = count)) +
       geom_line(color = "#3498db", size = 1) +
@@ -346,7 +351,7 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # 9. Sentiment Timeline
+  # 11. Sentiment Timeline
   output$sentiment_timeline <- renderPlotly({
     data <- filtered_data() %>%
       group_by(review_date, sentiment) %>%
@@ -365,12 +370,12 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # 10. Top Rated Movies
+  # 12. Top Rated Movies
   output$top_rated_movies <- renderPlotly({
     data <- filtered_data() %>%
       group_by(title) %>%
       summarize(avg_rating = mean(rating, na.rm = TRUE),
-                review_count = n()) %>%
+                review_count = n(), .groups = "drop") %>%
       filter(review_count >= 2) %>%
       arrange(desc(avg_rating)) %>%
       head(10)
@@ -387,11 +392,11 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # 11. Most Reviewed Movies
+  # 13. Most Reviewed Movies
   output$most_reviewed_movies <- renderPlotly({
     data <- filtered_data() %>%
       group_by(title) %>%
-      summarize(review_count = n()) %>%
+      summarize(review_count = n(), .groups = "drop") %>%
       arrange(desc(review_count)) %>%
       head(10)
     
@@ -406,11 +411,11 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # 12. Platform Distribution
+  # 14. Platform Distribution
   output$platform_distribution <- renderPlotly({
     data <- filtered_data() %>%
       group_by(platform) %>%
-      summarize(count = n(), avg_score = mean(review_score, na.rm = TRUE))
+      summarize(count = n(), avg_score = mean(review_score, na.rm = TRUE), .groups = "drop")
     
     p <- ggplot(data, aes(x = reorder(platform, -count), y = count, fill = platform)) +
       geom_col() +
@@ -423,7 +428,7 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # 13. Verified vs Unverified Reviews
+  # 15. Verified vs Unverified Reviews
   output$verified_vs_unverified <- renderPlotly({
     data <- filtered_data() %>%
       group_by(verified_purchase, sentiment) %>%
@@ -441,13 +446,13 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # Top Reviewers Analysis
+  # 16. Top Reviewers Analysis
   output$top_reviewers <- renderPlotly({
     data <- filtered_data() %>%
       group_by(reviewer_name) %>%
       summarize(review_count = n(),
                 avg_score = mean(review_score, na.rm = TRUE),
-                avg_helpful_votes = mean(helpful_votes, na.rm = TRUE)) %>%
+                avg_helpful_votes = mean(helpful_votes, na.rm = TRUE), .groups = "drop") %>%
       arrange(desc(review_count)) %>%
       head(15)
     
@@ -464,7 +469,7 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # 14. Review Score Distribution
+  # 17. Review Score Distribution
   output$score_distribution <- renderPlotly({
     data <- filtered_data()
     
@@ -480,7 +485,7 @@ server <- function(input, output, session) {
     ggplotly(p)
   })
   
-  # 15. Helpful Votes Analysis
+  # 18. Helpful Votes Analysis
   output$helpful_votes_analysis <- renderPlotly({
     data <- filtered_data()
     
